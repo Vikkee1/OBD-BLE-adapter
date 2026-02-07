@@ -6,4 +6,12 @@ This is implementation of OBD protocol reader. Application has BLE in order to c
 ## Folder contents
 
 ## How to use example
-te
+
+## TODO:
+- [ ] Test with real car OBD
+- [ ] Add vehicle speed and temperature PIDs
+- [ ] Make project folder structure more feasible
+- [ ] Draw architecture
+- [ ] Update README.md
+- [ ] Make CI/CD pipeline with Github actions
+- [ ] Make PCB for second prototype
