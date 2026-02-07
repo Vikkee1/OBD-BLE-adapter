@@ -6,3 +6,4 @@ This is implementation of OBD protocol reader. Application has BLE in order to c
 ## Folder contents
 
 ## How to use example
+test
