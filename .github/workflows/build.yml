@@ -12,6 +12,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
+      - name: Checkout repository
+        uses: actions/checkout@v4
+    
+      - name: Get ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with: 
+          esp_idf_version: v5.5.1
+          target: esp32s3
+        
+      - name: Use project sdkconfig
+        run: |
+          cp sdkconfig.defaults sdkconfig || true
+
+      - name: Congifure project
+        run: |
+          idf.py reconfigure
+
+      - name: Build project
+        shell: bash
+        run: |
+          idf.py set-target esp32s3
+          idf.py build
+
