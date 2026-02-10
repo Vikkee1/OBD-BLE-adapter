@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  Build:
 
     runs-on: ubuntu-latest
 
@@ -22,7 +22,15 @@ jobs:
           target: esp32s3
           command: |
             cp sdkconfig.defaults sdkconfig || true
+            set -e
+            echo "::group::Configure"
             idf.py reconfigure
-            idf.py build
-      
+            echo "::endgroup::"
 
+            echo "::group::Build"
+            idf.py build
+            echo "::endgroup::"
+
+            echo "::group::Size"
+            idf.py size
+            echo "::endgroup::"
