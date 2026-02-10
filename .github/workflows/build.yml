@@ -15,23 +15,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
     
-      - name: Get ESP-IDF
+      - name: Get ESP-IDF & build project
         uses: espressif/esp-idf-ci-action@v1
         with: 
           esp_idf_version: v5.5.1
           target: esp32s3
-          run_build: false
-        
-      - name: Use project sdkconfig
-        run: |
-          cp sdkconfig.defaults sdkconfig || true
-
-      - name: Congifure project
-        run: |
-          idf.py reconfigure
-
-      - name: Build project
-        shell: bash
-        run: |
-          idf.py build
+          command: |
+            cp sdkconfig.defaults sdkconfig || true
+            idf.py reconfigure
+            idf.py build
+      
 
