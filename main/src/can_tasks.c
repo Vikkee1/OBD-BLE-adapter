@@ -49,7 +49,7 @@ static void tx_timer_cb(void *arg) {
 
     memset(&frame.data[3], 0, 5);
 
-    xQueueSendFromISR(tx_queue, &frame, NULL);
+    xQueueSend(tx_queue, &frame, 0);
 
     // Move to next PID
     pid_index = (pid_index + 1) % PID_COUNT;
@@ -86,7 +86,7 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
     ESP_ERROR_CHECK(twai_node_enable(node_hdl));
 
     //Start TX timer
-    setup_tx_timer(500);
+    setup_tx_timer(150);
 
     return ESP_OK;
 }
@@ -102,6 +102,7 @@ void twai_rx_task(void *arg) {
                 can_bus_publish(&frame);
             }
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -126,6 +127,7 @@ void twai_tx_task(void *arg) {
 
             twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
         }
+        vTaskDelay(pdMS_TO_TICKS(25));
     }
 }
 

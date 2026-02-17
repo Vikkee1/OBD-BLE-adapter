@@ -15,6 +15,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg);
 static uint8_t own_addr_type;
 static uint8_t addr_val[6] = {0};
 static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'o', 'b', 'd', 'r', 'e', 'a', 'd', 'e', 'r'};
+static uint16_t current_conn_handle;
 
 /* Private functions */
 inline static void format_addr(char *addr_str, uint8_t addr[]) {
@@ -130,7 +131,10 @@ static void start_advertising(void) {
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     /* Local variables */
     int rc = 0;
-    struct ble_gap_conn_desc desc;
+    struct ble_gap_conn_desc desc = {
+        .supervision_timeout = 400,
+        .conn_itvl = 24
+    };
 
     /* Handle different GAP event */
     switch (event->type) {
@@ -153,16 +157,26 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 return rc;
             }
 
+            current_conn_handle = event->connect.conn_handle;
+
+            rc = ble_gap_conn_find(current_conn_handle, &desc);
+            if (rc == 0) {
+                print_conn_desc(&desc);
+            }
+
             /* Print connection descriptor */
             print_conn_desc(&desc);
 
             /* Try to update connection parameters */
-            struct ble_gap_upd_params params = {.itvl_min = desc.conn_itvl,
-                                                .itvl_max = desc.conn_itvl,
-                                                .latency = 3,
+            struct ble_gap_upd_params params = {.itvl_min = 24,
+                                                .itvl_max = 40,
+                                                .latency = 0,
                                                 .supervision_timeout =
-                                                    desc.supervision_timeout};
+                                                    400,
+                                                .min_ce_len = 0,
+                                                .max_ce_len = 0};
             rc = ble_gap_update_params(event->connect.conn_handle, &params);
+            printf("Update params rc = %d\n", rc);
             if (rc != 0) {
                 ESP_LOGE(
                     TAG,
@@ -195,12 +209,24 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 
         /* Print connection descriptor */
         rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "failed to find connection by handle, error code: %d",
-                     rc);
-            return rc;
+        if (rc == 0) {
+            print_conn_desc(&desc);
         }
-        print_conn_desc(&desc);
+
+        if (desc.conn_itvl == 6) {
+
+            struct ble_gap_upd_params params = {
+                .itvl_min = 24,
+                .itvl_max = 40,
+                .latency = 0,
+                .supervision_timeout = 500,
+                .min_ce_len = 0,
+                .max_ce_len = 0
+            };
+
+            int rc2 = ble_gap_update_params(current_conn_handle, &params);
+            ESP_LOGI(TAG, "Requested connection param update, rc=%d", rc2);
+        }
         return rc;
 
     /* Advertising complete event */

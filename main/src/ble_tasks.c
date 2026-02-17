@@ -25,7 +25,7 @@ static bool ble_transport_send(const uint8_t *data, size_t len) {
         get_ble_val_handle(),
         om);
 
-    ESP_LOGI(GATT_TAG, "Notification sent");
+    //ESP_LOGI(GATT_TAG, "Notification sent");
 
     return true;
 }
@@ -41,7 +41,7 @@ void ble_tx_task(void *param){
 
     uint8_t _obd_chr_val[3] = {0};
 
-    can_frame_t frame;
+    static can_frame_t frame = {.data[0] = 0x9, .dlc = 1};
     uint8_t buffer[32];
 
     ble_task_transport_init();
@@ -50,7 +50,6 @@ void ble_tx_task(void *param){
     while (1) {
 
         if ( can_bus_subscribe(&frame, 100) ){
-            /* Send obd notification if enabled */
             
             transport_send(frame.data, frame.dlc);
         }
