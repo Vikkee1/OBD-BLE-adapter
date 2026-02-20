@@ -54,7 +54,7 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg) {
     /* Local variables */
     int rc;
-    static int test;
+    static int test = 0;
 
     /* Handle access events */
     switch (ctxt->op) {
@@ -73,6 +73,8 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         /* Verify attribute handle */
         if (attr_handle == obd_chr_val_handle) {
             /* Update access buffer value */
+            test ++;
+            obd_chr_val[0] = test;
             rc = os_mbuf_append(ctxt->om, &obd_chr_val,
                                 sizeof(obd_chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;

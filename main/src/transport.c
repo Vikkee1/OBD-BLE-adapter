@@ -52,7 +52,7 @@ void transport_init(void)
         "transport_tx",
         4096,
         NULL,
-        4,
+        6,
         NULL,
         1   /* Core 1: application side */
     );
@@ -108,5 +108,6 @@ static void transport_tx_task(void *arg)
 
             xSemaphoreGive(backend_mutex);
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
