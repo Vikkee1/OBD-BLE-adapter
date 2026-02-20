@@ -52,7 +52,7 @@ void transport_init(void)
         "transport_tx",
         4096,
         NULL,
-        3,
+        6,
         NULL,
         1   /* Core 1: application side */
     );
