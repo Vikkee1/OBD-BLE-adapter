@@ -4,11 +4,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef enum {
+    TRANSPORT_SRC_BLE = 0,
+    TRANSPORT_SRC_CAN,
+    TRANSPORT_SRC_UNKNOWN
+} transport_source_t;
+
 /*
  * Transport backend function signature
  * Must be non-blocking or bounded-blocking
  */
-typedef bool (*transport_send_fn_t)(const uint8_t *data, size_t len);
+typedef bool (*transport_send_fn_t)(transport_source_t source, const uint8_t *data, size_t len);
 
 /*
  * Initialize transport system
@@ -23,7 +29,9 @@ void transport_init(void);
 bool transport_register(transport_send_fn_t send_fn);
 
 /*
- * Send data through all registered transports
+ * Send data to registered transports
  * Thread-safe, non-blocking
  */
-bool transport_send(const uint8_t *data, size_t len);
+bool transport_send(transport_source_t source,
+                    const uint8_t *data,
+                    size_t len);

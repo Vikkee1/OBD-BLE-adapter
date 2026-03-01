@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 
 /* ESP APIs */
@@ -42,14 +41,14 @@ void usb_tx_task(void *param){
     /* Task entry log */
     ESP_LOGI(APP_TAG, "USB task has been started!");
 
-    can_frame_t frame;
+    bus_msg_t msg;
 
     /* Loop forever */
     while (1) {
 
-        if ( can_bus_subscribe(&frame, 100) ){
+        if ( bus_subscribe_can(&msg, portMAX_DELAY) ){
             printf("ID: %lx DATA: %x %x %x %x \n", 
-                frame.id, frame.data[0], frame.data[1], frame.data[2], frame.data[3]);
+                msg.id, msg.data[0], msg.data[1], msg.data[2], msg.data[3]);
         }
 
         /* Sleep */
@@ -109,10 +108,10 @@ void app_main(void)
     ble_stack_start();
 
     /* Initialize transport layer */
-    transport_init();
+    //transport_init();
 
     /* Initialize message bus */
-    can_bus_init();
+    message_bus_init();
 
     /* Create CAN RX and TX tasks. Setup TX timer. */
     xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, NULL, 1);

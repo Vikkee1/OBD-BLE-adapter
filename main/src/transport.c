@@ -16,6 +16,7 @@
 /* ================= Internal Types ================= */
 
 typedef struct {
+    transport_source_t source;
     size_t  len;
     uint8_t data[TRANSPORT_MAX_PAYLOAD];
 } transport_msg_t;
@@ -77,13 +78,14 @@ bool transport_register(transport_send_fn_t send_fn)
     return ok;
 }
 
-bool transport_send(const uint8_t *data, size_t len)
+bool transport_send(transport_source_t source, const uint8_t *data, size_t len)
 {
     if (!data || len == 0 || len > TRANSPORT_MAX_PAYLOAD) {
         return false;
     }
 
     transport_msg_t msg;
+    msg.source = source;
     msg.len = len;
     memcpy(msg.data, data, len);
 
@@ -103,7 +105,7 @@ static void transport_tx_task(void *arg)
             xSemaphoreTake(backend_mutex, portMAX_DELAY);
 
             for (size_t i = 0; i < backend_count; i++) {
-                backends[i](msg.data, msg.len);
+                backends[i](msg.source, msg.data, msg.len);
             }
 
             xSemaphoreGive(backend_mutex);
