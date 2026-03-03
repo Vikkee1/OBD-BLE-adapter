@@ -107,7 +107,10 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 
         bus_msg_t msg;
 
-        msg.len = len;
+        msg.len = 3;
+        msg.data[0] = 2;
+        msg.data[1] = 0x01;
+        msg.data[2] = 0x0C;
         memcpy(msg.data, obd_chr_val, len);
 
         if (!bus_publish_ble(&msg)) {

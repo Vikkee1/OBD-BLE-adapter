@@ -26,11 +26,10 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame)) {
         
         can_frame_t frame;
-
         frame.id = rx_frame.header.id;
         frame.dlc = rx_frame.header.dlc;
         memcpy(frame.data, rx_frame.buffer, frame.dlc);
-
+        
         xQueueSendFromISR(rx_queue, &frame, NULL);
     }
     return false;
@@ -96,17 +95,17 @@ void twai_rx_task(void *arg) {
 
     while(1) {
         if (xQueueReceive(rx_queue, &frame, portMAX_DELAY) == pdTRUE) {
+            ESP_LOGI(CAN_TAG,"ID: %x", frame.id);
             if (frame.id == RESPONSE_ID) {
+                ESP_LOGI(CAN_TAG, "Correct ID");
+
                 msg.id = frame.id;
                 msg.len = frame.dlc;
                 memcpy(msg.data, frame.data, frame.dlc);
 
-                ESP_LOGI(CAN_TAG, "Received CAN");
-
                 bus_publish_can(&msg);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
