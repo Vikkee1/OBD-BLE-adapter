@@ -42,7 +42,7 @@ static bool ble_send( const uint8_t *data, size_t len) {
     
     /* Create mbuf with data */
     struct os_mbuf *om =
-        ble_hs_mbuf_from_flat(data, sizeof(data));
+        ble_hs_mbuf_from_flat(data, len);
 
     if (!om) {
         ESP_LOGE(GATT_TAG, "Failed to allocate mbuf");
@@ -73,8 +73,12 @@ void ble_tx_task(void *param)
 
         if (bus_subscribe_ble(&msg, portMAX_DELAY)) {
 
+            //ESP_LOGI(GATT_TAG, "DATA: %D %D %D %D", msg.data[0], msg.data[1], msg.data[2], msg.data[3]); 
+
             if (is_connected()) {
-                ble_send(msg.data, msg.len);
+                if(!ble_send(msg.data, msg.len)){
+                    ESP_LOGW(GATT_TAG, "SEND FAILED");
+                };
             }
         }
     }

@@ -15,22 +15,15 @@
 #define RX_QUEUE_LENGTH     10
 
 // OBD PIDs
-#define PID_COUNT           3
+#define PID_COUNT           2
 #define RESPONSE_ID         0x7DE
 #define COOLANT_TEMP_PID    0x05
 #define RPM_PID             0x0C
-
-typedef struct 
-{
-    uint16_t rpm;
-    int8_t temp;
-}obd_data_t;
 
 // External handles
 extern twai_node_handle_t node_hdl;
 extern QueueHandle_t tx_queue;
 extern QueueHandle_t rx_queue;
-extern obd_data_t received_data;
 
 // Function prototypes
 /**
