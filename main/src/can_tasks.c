@@ -11,7 +11,8 @@ QueueHandle_t tx_queue = NULL;
 QueueHandle_t rx_queue = NULL;
 obd_data_t received_data = {0};
 
-static uint8_t requested_pids[PID_COUNT] = {RPM_PID, COOLANT_TEMP_PID};
+
+static uint8_t requested_pids[PID_COUNT] = {RPM_PID, COOLANT_TEMP_PID, SPEED_PID, ENGINE_LOAD_PID, FUEL_LEVEL_PID};
 static size_t pid_index = 0;
 
 // ================= TWAI RX Callback =================
@@ -48,7 +49,7 @@ static void tx_timer_cb(void *arg) {
     frame.data[1] = 0x01;
     frame.data[2] = requested_pids[pid_index];
 
-    memset(&frame.data[3], 0, 5);
+    memset(&frame.data[3], 0xAA, 5);
 
     xQueueSend(tx_queue, &frame, 0);
 
@@ -69,7 +70,7 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
     twai_onchip_node_config_t node_config = {
         .io_cfg.tx = tx_io,             // TWAI TX GPIO pin
         .io_cfg.rx = rx_io,             // TWAI RX GPIO pin
-        .bit_timing.bitrate = 250000,   // 200 kbps bitrate
+        .bit_timing.bitrate = 500000,   // 200 kbps bitrate
         .tx_queue_depth = 10,           // Transmit queue depth set to 5
     };
 
@@ -86,7 +87,7 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
     // Start the TWAI controller
     ESP_ERROR_CHECK(twai_node_enable(node_hdl));
 
-    setup_tx_timer(150);
+    setup_tx_timer(100);
 
     return ESP_OK;
 }
@@ -124,7 +125,11 @@ void twai_tx_task(void *arg) {
     while(1) {
 
         if (bus_subscribe_can(&ble_msg, 100)){
-            if (ble_msg.id == 1) _start_tx = 1;
+            if (ble_msg.data[0] == 1){
+                _start_tx = 1;
+            } else if (ble_msg.data[0] == 0){
+                _start_tx = 0;
+            }
         }
 
         if (xQueueReceive(tx_queue, &_frame, portMAX_DELAY) == pdTRUE && _start_tx) {

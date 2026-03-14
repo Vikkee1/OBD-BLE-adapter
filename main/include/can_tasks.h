@@ -15,10 +15,14 @@
 #define RX_QUEUE_LENGTH     10
 
 // OBD PIDs
-#define PID_COUNT           2
-#define RESPONSE_ID         0x7DE
+#define PID_COUNT           5
+#define RESPONSE_ID         0x7E8
+
 #define COOLANT_TEMP_PID    0x05
 #define RPM_PID             0x0C
+#define SPEED_PID           0x0D
+#define ENGINE_LOAD_PID     0x04
+#define FUEL_LEVEL_PID      0x2F
 
 // External handles
 extern twai_node_handle_t node_hdl;
