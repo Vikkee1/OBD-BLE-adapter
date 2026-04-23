@@ -1,6 +1,5 @@
 #pragma once
 
-#include "can_types.h"
 #include <stdbool.h>
 #include <stdio.h>
 

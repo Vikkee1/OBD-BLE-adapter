@@ -17,12 +17,19 @@
 // OBD PIDs
 #define PID_COUNT           5
 #define RESPONSE_ID         0x7E8
+#define REQUEST_ID          0x7DF
 
 #define COOLANT_TEMP_PID    0x05
 #define RPM_PID             0x0C
 #define SPEED_PID           0x0D
 #define ENGINE_LOAD_PID     0x04
 #define FUEL_LEVEL_PID      0x2F
+
+// COMMANDS
+#define STOP_CMD            0x00
+#define START_CMD           0x01
+#define PID_CMD             0x02
+#define DTC_CMD             0x03
 
 // External handles
 extern twai_node_handle_t node_hdl;

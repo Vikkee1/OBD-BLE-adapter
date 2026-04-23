@@ -1,9 +1,8 @@
 #include "can_tasks.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "can_types.h"
-#include "transport.h"
 #include "message_bus.h"
+#include "can_types.h"
 
 /* Global handles */
 twai_node_handle_t node_hdl = NULL;
@@ -11,6 +10,12 @@ QueueHandle_t tx_queue = NULL;
 QueueHandle_t rx_queue = NULL;
 obd_data_t received_data = {0};
 
+enum Mode {
+    IDLE,
+    STREAM,
+    PID,
+    DTC
+};
 
 static uint8_t requested_pids[PID_COUNT] = {RPM_PID, COOLANT_TEMP_PID, SPEED_PID, ENGINE_LOAD_PID, FUEL_LEVEL_PID};
 static size_t pid_index = 0;
@@ -41,9 +46,8 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
 static void tx_timer_cb(void *arg) {
 
     can_frame_t frame;
-    uint8_t pid = (uint8_t)(uintptr_t)arg;
 
-    frame.id = 0x7DF;
+    frame.id = REQUEST_ID;
     frame.dlc = 8;
     frame.data[0] = 0x02;
     frame.data[1] = 0x01;
@@ -71,7 +75,7 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
         .io_cfg.tx = tx_io,             // TWAI TX GPIO pin
         .io_cfg.rx = rx_io,             // TWAI RX GPIO pin
         .bit_timing.bitrate = 500000,   // 200 kbps bitrate
-        .tx_queue_depth = 10,           // Transmit queue depth set to 5
+        .tx_queue_depth = 10,           // Transmit queue depth
     };
 
     twai_event_callbacks_t user_cbs = {
@@ -87,9 +91,31 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
     // Start the TWAI controller
     ESP_ERROR_CHECK(twai_node_enable(node_hdl));
 
+    // Setup TX timer
     setup_tx_timer(100);
 
     return ESP_OK;
+}
+
+esp_err_t request_supported_pids(uint8_t pid){
+    uint8_t rx_buf[8];
+    twai_frame_t _tx_frame = {
+        .buffer = rx_buf,
+        .buffer_len = sizeof(rx_buf),
+    };
+
+    _tx_frame.header.id = REQUEST_ID;
+    _tx_frame.header.ide = 0;
+    _tx_frame.header.rtr = 0;
+    _tx_frame.buffer_len = 8;
+
+    _tx_frame.buffer[0] = 0x02;
+    _tx_frame.buffer[1] = 0x01;
+    _tx_frame.buffer[2] = pid;
+
+    memset(&_tx_frame.buffer[3], 0xAA, 5);
+
+    return twai_node_transmit(node_hdl, &_tx_frame, pdMS_TO_TICKS(10));
 }
 
 // ================= TWAI RX Task =================
@@ -102,9 +128,6 @@ void twai_rx_task(void *arg) {
         if (xQueueReceive(rx_queue, &msg, portMAX_DELAY) == pdTRUE) {
 
             if (msg.id == RESPONSE_ID) {
-
-                //ESP_LOGI(CAN_TAG, "DATA 1: %D %D %D %D",msg.data[0], msg.data[1], msg.data[2], msg.data[3]);
-
                 bus_publish_can(&msg);
             }
         }
@@ -117,35 +140,67 @@ void twai_tx_task(void *arg) {
     can_frame_t _frame;
     twai_frame_t tx_frame;
     static uint8_t buf[8];
-    uint8_t _start_tx = 0;
-    bus_msg_t ble_msg;
+    enum Mode mode = IDLE;
+    bus_msg_t from_ble_msg;
+    static uint8_t _pids = 0;
 
     ESP_LOGI(CAN_TAG, "CAN TX task created");
 
     while(1) {
 
-        if (bus_subscribe_can(&ble_msg, 100)){
-            if (ble_msg.data[0] == 1){
-                _start_tx = 1;
-            } else if (ble_msg.data[0] == 0){
-                _start_tx = 0;
+        // UPDATE MODE
+        if (bus_subscribe_can(&from_ble_msg, 100)){
+
+            uint8_t _cmd = from_ble_msg.data[0];
+
+            if (_cmd == START_CMD){
+                mode = STREAM;
+            } else if(_cmd == PID_CMD){
+                mode = PID;
+            } else if(_cmd == DTC_CMD){
+                mode = DTC;
+            } else{
+                mode = IDLE;
             }
+
+            ESP_LOGI(CAN_TAG, "MODE: %d", mode);
         }
 
-        if (xQueueReceive(tx_queue, &_frame, portMAX_DELAY) == pdTRUE && _start_tx) {
+        // MODE
+        if (mode == STREAM) {
 
-            tx_frame.header.id = _frame.id;
-            tx_frame.header.ide = 0;
-            tx_frame.header.rtr = 0;
-            tx_frame.buffer_len = _frame.dlc;
+            if (xQueueReceive(tx_queue, &_frame, portMAX_DELAY) == pdTRUE) {
+                tx_frame.header.id = _frame.id;
+                tx_frame.header.ide = 0;
+                tx_frame.header.rtr = 0;
+                tx_frame.buffer_len = _frame.dlc;
 
-            memcpy(buf, _frame.data, _frame.dlc);
-            tx_frame.buffer = buf;
+                memcpy(buf, _frame.data, _frame.dlc);
+                tx_frame.buffer = buf;
 
-            twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
+                twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
+            }
+        }else if (mode == PID){
+            
+            request_supported_pids(_pids);
+            _pids += 32;
+
+            if (_pids > 160)
+            {
+                mode = IDLE;
+                _pids = 0;
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(150));
+
+        }else if ( mode == DTC) {
+            // Request DTC codes
+            ;
         }
     }
 }
+
+
 
 // ================= TWAI TX Timer setup =================
 void setup_tx_timer(uint64_t interval_ms) {

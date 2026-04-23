@@ -15,16 +15,15 @@
 #include <freertos/task.h>
 #include "freertos/queue.h"
 
-/* CAN APIs */
+/* CAN task APIs */
 #include "can_tasks.h"
 
 /* BLE APIs*/
 #include "ble_stack.h"
 #include "ble_tasks.h"
 
-/* Transport & message layer */
+/* Message bus layer */
 #include "message_bus.h"
-#include "transport.h"
 
 /* Misc */
 #include "ws2812.h"
@@ -100,20 +99,13 @@ void app_main(void)
     /* Initialize GATT */
     gatt_svc_init();
 
-    /* Start LED */
-    //ws2812_init(WS2812_GPIO);
-    //ws2812_set_color(0, 5, 0);
-
     /* Start BLE stack*/
     ble_stack_start();
-
-    /* Initialize transport layer */
-    //transport_init();
 
     /* Initialize message bus */
     message_bus_init();
 
-    /* Create CAN RX and TX tasks. Setup TX timer. */
+    /* Create CAN RX and TX tasks */
     xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, NULL, 1);
     xTaskCreatePinnedToCore(twai_rx_task, "TWAI_RX", 2*2048, NULL, 3, NULL, 1);
 
