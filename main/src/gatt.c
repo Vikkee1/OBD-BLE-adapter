@@ -108,10 +108,9 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         bus_msg_t msg;
         
         msg.id = 0x01;
-        msg.len = 1;
+        msg.len = 2;
         msg.data[0] = obd_chr_val[0];
-
-        memcpy(msg.data, obd_chr_val, len);
+        msg.data[1] = obd_chr_val[1];
 
         if (!bus_publish_ble(&msg)) {
             ESP_LOGW(GATT_TAG, "BLE->CAN queue full");
