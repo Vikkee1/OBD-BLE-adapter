@@ -28,8 +28,9 @@
 // COMMANDS
 #define STOP_CMD            0x00
 #define START_CMD           0x01
-#define PID_CMD             0x02
+#define SUPP_PID_CMD        0x02
 #define DTC_CMD             0x03
+#define PID_CMD             0x10
 
 // External handles
 extern twai_node_handle_t node_hdl;
