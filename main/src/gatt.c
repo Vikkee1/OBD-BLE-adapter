@@ -26,7 +26,7 @@ static uint16_t obd_chr_conn_handle = 0;
 static bool obd_chr_conn_handle_inited = false;
 static bool obd_ind_status = false;
 
-int test = 0;
+static gatt_rx_callback_t rx_callback = NULL;
 
 /* GATT services table */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
@@ -112,9 +112,13 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         msg.data[0] = obd_chr_val[0];
         msg.data[1] = obd_chr_val[1];
 
-        if (!bus_publish_ble(&msg)) {
-            ESP_LOGW(GATT_TAG, "BLE->CAN queue full");
+        if (rx_callback) {
+            rx_callback(obd_chr_val, len);
         }
+
+        /*if (!bus_publish_ble(&msg)) {
+            ESP_LOGW(GATT_TAG, "BLE->CAN queue full");
+        }*/
         
         return 0;
 
@@ -239,4 +243,8 @@ uint16_t get_ble_val_handle(void){
 
 bool is_connected(void){
     return obd_ind_status && obd_chr_conn_handle_inited;
+}
+
+void gatt_register_rx_callback(gatt_rx_callback_t cb) {
+    rx_callback = cb;
 }

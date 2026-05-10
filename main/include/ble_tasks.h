@@ -8,3 +8,4 @@
 #define TASK_PERIOD (50 / portTICK_PERIOD_MS)
 
 void ble_tx_task(void *param);
+void ble_task_init(void);

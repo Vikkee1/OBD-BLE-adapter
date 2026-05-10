@@ -17,6 +17,8 @@ static uint8_t addr_val[6] = {0};
 static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'o', 'b', 'd', 'r', 'e', 'a', 'd', 'e', 'r'};
 static uint16_t current_conn_handle;
 
+static gap_disconnect_callback_t disconnect_callback = NULL;
+
 /* Private functions */
 inline static void format_addr(char *addr_str, uint8_t addr[]) {
     sprintf(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1],
@@ -180,6 +182,10 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         ESP_LOGI(TAG, "disconnected from peer; reason=%d",
                  event->disconnect.reason);
 
+        /* Disconnect callback */
+        if(disconnect_callback){
+            disconnect_callback();
+        }
         /* Restart advertising */
         start_advertising();
         return rc;

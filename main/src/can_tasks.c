@@ -190,7 +190,7 @@ void twai_tx_task(void *arg) {
     while(1) {
 
         // UPDATE MODE
-        if (bus_subscribe_can(&from_ble_msg, 100)){
+        if (bus_subscribe_ble(&from_ble_msg, 100)){
 
             _cmd = from_ble_msg.data[0];
             _pid = from_ble_msg.data[1];
@@ -212,7 +212,7 @@ void twai_tx_task(void *arg) {
 
         // MODE
         if (mode == STREAM) {
-
+            // Stream received data
             if (xQueueReceive(tx_queue, &_frame, portMAX_DELAY) == pdTRUE) {
                 tx_frame.header.id = _frame.id;
                 tx_frame.header.ide = 0;
@@ -235,12 +235,12 @@ void twai_tx_task(void *arg) {
                 mode = IDLE;
                 _pids = 0;
             }
-
             vTaskDelay(pdMS_TO_TICKS(250));
 
         }else if ( mode == DTC) {
-            // Request DTC codes
-            ;
+            request_dtc();
+            mode = IDLE;
+
         }else if ( mode == PID_CMD){
             // Request commanded PID
             if (_pid != prev_pid) request_pid(_pid);

@@ -3,6 +3,8 @@ This is implementation of OBD protocol reader. Application has BLE in order to c
 
 ## Application architecture
 
+![alt text](20260506_194049.jpg)
+
 ## Folder contents
 
 ## How to use example

@@ -1,5 +1,6 @@
 #include "ble_tasks.h"
 #include "gatt.h"
+#include "gap.h"
 #include "message_bus.h"
 
 static bool ble_send( const uint8_t *data, size_t len) {
@@ -27,6 +28,35 @@ static bool ble_send( const uint8_t *data, size_t len) {
     return true;
 }
 
+static void ble_disconnect_handler(void){
+    bus_msg_t msg;
+
+    msg.id = 0x01;
+    msg.len = 0;
+
+    if (!bus_publish_ble(&msg)) {
+        ESP_LOGW("BUS", "BLE->CAN queue full");
+    }
+}
+
+static void ble_rx_handler(uint8_t *data, uint16_t len) {
+    bus_msg_t msg;
+
+    msg.id = 0x01;
+    msg.len = len;
+
+    memcpy(msg.data, data, len);
+
+    if (!bus_publish_ble(&msg)) {
+        ESP_LOGW("BUS", "BLE->CAN queue full");
+    }
+}
+
+void ble_task_init(void){
+    gatt_register_rx_callback(ble_rx_handler);
+    gap_register_disc_callback(ble_disconnect_handler);
+}
+
 void ble_tx_task(void *param)
 {
     ESP_LOGI(BLE_TASK_TAG, "BLE TX task started");
@@ -35,7 +65,7 @@ void ble_tx_task(void *param)
 
     while (1) {
 
-        if (bus_subscribe_ble(&msg, portMAX_DELAY)) {
+        if (bus_subscribe_can(&msg, portMAX_DELAY)) {
 
             if (is_connected()) {
                 if(!ble_send(msg.data, msg.len)){

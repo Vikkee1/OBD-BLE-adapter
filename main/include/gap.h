@@ -14,8 +14,11 @@
 #define BLE_GAP_URI_PREFIX_HTTPS 0x17
 #define BLE_GAP_LE_ROLE_PERIPHERAL 0x00
 
+typedef void (*gap_disconnect_callback_t)(void);
+
 /* Public function declarations */
 void adv_init(void);
 int gap_init(void);
+void gap_register_disc_callback(gap_disconnect_callback_t cb);
 
 #endif
