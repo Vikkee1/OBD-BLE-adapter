@@ -35,7 +35,6 @@
 // External handles
 extern twai_node_handle_t node_hdl;
 extern QueueHandle_t tx_queue;
-extern QueueHandle_t rx_queue;
 
 // Function prototypes
 /**
@@ -44,5 +43,4 @@ extern QueueHandle_t rx_queue;
 */
 esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io);
 void twai_tx_task(void *arg);
-void twai_rx_task(void *arg);
 void setup_tx_timer(uint64_t interval_ms);

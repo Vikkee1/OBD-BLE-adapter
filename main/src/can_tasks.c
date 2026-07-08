@@ -7,8 +7,6 @@
 /* Global handles */
 twai_node_handle_t node_hdl = NULL;
 QueueHandle_t tx_queue = NULL;
-QueueHandle_t rx_queue = NULL;
-obd_data_t received_data = {0};
 
 enum Mode {
     IDLE,
@@ -29,10 +27,30 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
         .buffer_len = sizeof(rx_buf),
     };
 
+    BaseType_t hpw = pdFALSE;
+
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame)) {
-        xQueueSendFromISR(rx_queue, &rx_frame, NULL);
+
+        /* Only forward OBD responses; drop everything else in the ISR. */
+        if (rx_frame.header.id == RESPONSE_ID) {
+
+            uint8_t dlc = rx_frame.header.dlc;
+            if (dlc > sizeof(((bus_msg_t *)0)->frame.data)) {
+                dlc = sizeof(((bus_msg_t *)0)->frame.data);
+            }
+
+            /* Copy the payload by value now — rx_buf is reused on every frame. */
+            bus_msg_t msg = { .type = BUS_OBD_FRAME };
+            msg.frame.id  = rx_frame.header.id;
+            msg.frame.dlc = dlc;
+            memcpy(msg.frame.data, rx_frame.buffer, dlc);
+
+            bus_to_ble_post_from_isr(&msg, &hpw);
+        }
     }
-    return false;
+
+    /* Return the yield flag; the driver performs the context switch. */
+    return hpw == pdTRUE;
 }
 
 // ================= TWAI TX Timer Callback =================
@@ -64,9 +82,8 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
 
     // Queues
     tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(twai_frame_t));
-    rx_queue = xQueueCreate(RX_QUEUE_LENGTH, sizeof(twai_frame_t));
 
-    if (!tx_queue || !rx_queue) return ESP_FAIL;
+    if (!tx_queue) return ESP_FAIL;
 
     // Node config
     twai_onchip_node_config_t node_config = {
@@ -155,31 +172,6 @@ esp_err_t request_pid(uint8_t pid){
     memset(&_tx_frame.buffer[3], 0xAA, 5);
 
     return twai_node_transmit(node_hdl, &_tx_frame, pdMS_TO_TICKS(50));
-}
-
-// ================= TWAI RX Task =================
-void twai_rx_task(void *arg) {
-    static uint8_t tx_buf[8];
-    static twai_frame_t tx_frame = {
-        .buffer = tx_buf,
-        .buffer_len = sizeof(tx_buf),
-    };
-
-    bus_msg_t msg;
-    ESP_LOGI(CAN_TAG, "CAN RX task created");
-
-    while(1) {
-        if (xQueueReceive(rx_queue, &tx_frame, portMAX_DELAY) == pdTRUE) {
-
-            if (tx_frame.header.id == RESPONSE_ID) {
-
-                msg.frame.id = tx_frame.header.id;
-                msg.frame.dlc = tx_frame.buffer_len;
-                memcpy(msg.frame.data, tx_frame.buffer, tx_frame.buffer_len);
-                bus_to_ble_post(&msg);
-            }
-        }
-    }
 }
 
 // ================= TWAI TX Task =================

@@ -87,7 +87,6 @@ void app_main(void)
 
     /* Create CAN RX and TX tasks */
     xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, NULL, 1);
-    xTaskCreatePinnedToCore(twai_rx_task, "TWAI_RX", 2*2048, NULL, 3, NULL, 1);
 
     /* Start BLE task */
     xTaskCreate(ble_tx_task, "BLE TX task", 4*1024, NULL, 5, NULL);

@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include "freertos/FreeRTOS.h"
 
 typedef enum { BUS_CMD, BUS_OBD_FRAME, BUS_STATUS } bus_msg_type_t;
 

@@ -31,8 +31,10 @@ static bool ble_send( const uint8_t *data, size_t len) {
 static void ble_disconnect_handler(void){
     bus_msg_t msg;
 
-    msg.frame.id = 0x01;
-    msg.frame.dlc = 0;
+    /* On disconnect, tell the CAN side to stop streaming (cmd 0x00 -> IDLE). */
+    msg.type = BUS_CMD;
+    msg.command.cmd = 0x00;
+    msg.command.pid = 0x00;
 
     if (!bus_to_can_post(&msg)) {
         ESP_LOGW("BUS", "BLE->CAN queue full");
@@ -42,10 +44,10 @@ static void ble_disconnect_handler(void){
 static void ble_rx_handler(uint8_t *data, uint16_t len) {
     bus_msg_t msg;
 
-    msg.frame.id = 0x01;
-    msg.frame.dlc = len;
-
-    memcpy(msg.frame.data, data, len);
+    /* BLE write carries a command: data[0] = cmd, data[1] = pid. */
+    msg.type = BUS_CMD;
+    msg.command.cmd = (len > 0) ? data[0] : 0x00;
+    msg.command.pid = (len > 1) ? data[1] : 0x00;
 
     if (!bus_to_can_post(&msg)) {
         ESP_LOGW("BUS", "BLE->CAN queue full");

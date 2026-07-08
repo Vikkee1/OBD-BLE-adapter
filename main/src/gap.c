@@ -262,6 +262,10 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 
 
 /* Public functions */
+void gap_register_disc_callback(gap_disconnect_callback_t cb) {
+    disconnect_callback = cb;
+}
+
 void adv_init(void) {
     /* Local variables */
     int rc = 0;
