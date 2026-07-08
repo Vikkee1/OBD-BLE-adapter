@@ -36,28 +36,6 @@
 #define APP_TAG "APP"
 #define USB_TASK_PERIOD (50 / portTICK_PERIOD_MS)
 
-void usb_tx_task(void *param){
-    /* Task entry log */
-    ESP_LOGI(APP_TAG, "USB task has been started!");
-
-    bus_msg_t msg;
-
-    /* Loop forever */
-    while (1) {
-
-        if ( bus_subscribe_can(&msg, portMAX_DELAY) ){
-            printf("ID: %lx DATA: %x %x %x %x \n", 
-                msg.id, msg.data[0], msg.data[1], msg.data[2], msg.data[3]);
-        }
-
-        /* Sleep */
-        vTaskDelay(USB_TASK_PERIOD);
-    }
-
-    /* Clean up at exit */
-    vTaskDelete(NULL);
-}
-
 esp_err_t init_nvs(void){
     /*
      * NVS flash initialization

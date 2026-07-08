@@ -30,14 +30,7 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
     };
 
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame)) {
-        
-        bus_msg_t msg;
-
-        msg.id = rx_frame.header.id;
-        msg.len = rx_frame.header.dlc;
-        memcpy(msg.data, rx_frame.buffer, msg.len);
-
-        xQueueSendFromISR(rx_queue, &msg, NULL);
+        xQueueSendFromISR(rx_queue, &rx_frame, NULL);
     }
     return false;
 }
@@ -45,15 +38,20 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
 // ================= TWAI TX Timer Callback =================
 static void tx_timer_cb(void *arg) {
 
-    can_frame_t frame;
+    static uint8_t buf[8];
+    static twai_frame_t frame = {
+        .buffer = buf,
+        .buffer_len = sizeof(buf),
+    };
 
-    frame.id = REQUEST_ID;
-    frame.dlc = 8;
-    frame.data[0] = 0x02;
-    frame.data[1] = 0x01;
-    frame.data[2] = requested_pids[pid_index];
 
-    memset(&frame.data[3], 0xAA, 5);
+    frame.header.id = REQUEST_ID;
+    frame.buffer_len = 8;
+    frame.buffer[0] = 0x02;
+    frame.buffer[1] = 0x01;
+    frame.buffer[2] = requested_pids[pid_index];
+
+    memset(&frame.buffer[3], 0xAA, 5);
 
     xQueueSend(tx_queue, &frame, 0);
 
@@ -65,8 +63,8 @@ static void tx_timer_cb(void *arg) {
 esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
 
     // Queues
-    tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(can_frame_t));
-    rx_queue = xQueueCreate(RX_QUEUE_LENGTH, sizeof(can_frame_t));
+    tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(twai_frame_t));
+    rx_queue = xQueueCreate(RX_QUEUE_LENGTH, sizeof(twai_frame_t));
 
     if (!tx_queue || !rx_queue) return ESP_FAIL;
 
@@ -161,15 +159,24 @@ esp_err_t request_pid(uint8_t pid){
 
 // ================= TWAI RX Task =================
 void twai_rx_task(void *arg) {
-    twai_frame_t frame;
-    ESP_LOGI(CAN_TAG, "CAN RX task created");
+    static uint8_t tx_buf[8];
+    static twai_frame_t tx_frame = {
+        .buffer = tx_buf,
+        .buffer_len = sizeof(tx_buf),
+    };
+
     bus_msg_t msg;
+    ESP_LOGI(CAN_TAG, "CAN RX task created");
 
     while(1) {
-        if (xQueueReceive(rx_queue, &msg, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(rx_queue, &tx_frame, portMAX_DELAY) == pdTRUE) {
 
-            if (msg.id == RESPONSE_ID) {
-                bus_publish_can(&msg);
+            if (tx_frame.header.id == RESPONSE_ID) {
+
+                msg.frame.id = tx_frame.header.id;
+                msg.frame.dlc = tx_frame.buffer_len;
+                memcpy(msg.frame.data, tx_frame.buffer, tx_frame.buffer_len);
+                bus_to_ble_post(&msg);
             }
         }
     }
@@ -190,10 +197,10 @@ void twai_tx_task(void *arg) {
     while(1) {
 
         // UPDATE MODE
-        if (bus_subscribe_ble(&from_ble_msg, 100)){
+        if (bus_to_can_get(&from_ble_msg, 100)){
 
-            _cmd = from_ble_msg.data[0];
-            _pid = from_ble_msg.data[1];
+            _cmd = from_ble_msg.command.cmd;
+            _pid = from_ble_msg.command.pid;
 
             ESP_LOGI(CAN_TAG, "CMD: %x %x", _cmd, _pid);
 
