@@ -3,10 +3,15 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+typedef enum { BUS_CMD, BUS_OBD_FRAME, BUS_STATUS } bus_msg_type_t;
+
 typedef struct {
-    uint32_t id;
-    size_t len;
-    uint8_t data[64];
+    bus_msg_type_t type;
+    union {
+        struct { uint8_t cmd, pid; }                command;   /* to_can */
+        struct { uint32_t id; uint8_t dlc, data[8]; } frame;   /* to_ble */
+        struct { uint8_t code; }                    status;    /* either  */
+    };
 } bus_msg_t;
 
 typedef struct __attribute__((packed)) {
@@ -17,7 +22,8 @@ typedef struct __attribute__((packed)) {
 } obd_data_t;
 
 void message_bus_init(void);
-bool bus_publish_ble(const bus_msg_t *msg);
-bool bus_publish_can(const bus_msg_t *msg);
-bool bus_subscribe_ble(bus_msg_t *msg, uint32_t timeout_ms);
-bool bus_subscribe_can(bus_msg_t *msg, uint32_t timeout_ms);
+bool bus_to_can_post(const bus_msg_t *m);            /* BLE side produces */
+bool bus_to_can_get (bus_msg_t *m, uint32_t to_ms);  /* twai_tx_task consumes */
+bool bus_to_ble_post(const bus_msg_t *m);            /* CAN side produces */
+bool bus_to_ble_get (bus_msg_t *m, uint32_t to_ms);  /* ble_tx_task consumes */
+bool bus_to_ble_post_from_isr(const bus_msg_t *msg, BaseType_t *higher_prio_woken);

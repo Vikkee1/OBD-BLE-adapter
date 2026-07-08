@@ -90,6 +90,9 @@ void app_main(void)
         return;
     }
 
+    /* Initialize message bus */
+    message_bus_init();
+
     /* Initialize BLE stack */
     ble_stack_init();
 
@@ -99,11 +102,10 @@ void app_main(void)
     /* Initialize GATT */
     gatt_svc_init();
 
+    ble_task_init();
+
     /* Start BLE stack*/
     ble_stack_start();
-
-    /* Initialize message bus */
-    message_bus_init();
 
     /* Create CAN RX and TX tasks */
     xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, NULL, 1);
@@ -111,8 +113,5 @@ void app_main(void)
 
     /* Start BLE task */
     xTaskCreate(ble_tx_task, "BLE TX task", 4*1024, NULL, 5, NULL);
-
-    /* USB debug task */
-    //xTaskCreate(usb_tx_task, "USB_RX", 2048, NULL, 5, NULL);
-    return;
+    
 }

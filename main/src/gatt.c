@@ -115,10 +115,6 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         if (rx_callback) {
             rx_callback(obd_chr_val, len);
         }
-
-        /*if (!bus_publish_ble(&msg)) {
-            ESP_LOGW(GATT_TAG, "BLE->CAN queue full");
-        }*/
         
         return 0;
 
