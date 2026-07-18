@@ -8,6 +8,11 @@
 twai_node_handle_t node_hdl = NULL;
 QueueHandle_t tx_queue = NULL;
 
+typedef struct {
+    twai_frame_t frame;
+    uint8_t      payload[8];
+} tx_item_t;
+
 enum Mode {
     IDLE,
     STREAM,
@@ -26,7 +31,6 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
         .buffer = rx_buf,
         .buffer_len = sizeof(rx_buf),
     };
-
     BaseType_t hpw = pdFALSE;
 
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame)) {
@@ -56,24 +60,19 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
 // ================= TWAI TX Timer Callback =================
 static void tx_timer_cb(void *arg) {
 
-    static uint8_t buf[8];
-    static twai_frame_t frame = {
-        .buffer = buf,
-        .buffer_len = sizeof(buf),
-    };
+    tx_item_t item = {0};
 
+    item.frame.header.id  = REQUEST_ID;
+    item.frame.header.ide = 0;
+    item.frame.header.rtr = 0;
+    item.frame.buffer_len = 8;
 
-    frame.header.id = REQUEST_ID;
-    frame.buffer_len = 8;
-    frame.buffer[0] = 0x02;
-    frame.buffer[1] = 0x01;
-    frame.buffer[2] = requested_pids[pid_index];
+    item.payload[0] = 0x02;
+    item.payload[1] = 0x01;
+    item.payload[2] = requested_pids[pid_index];
+    memset(&item.payload[3], 0xAA, 5);
 
-    memset(&frame.buffer[3], 0xAA, 5);
-
-    xQueueSend(tx_queue, &frame, 0);
-
-    // Move to next PID
+    xQueueSend(tx_queue, &item, 0);
     pid_index = (pid_index + 1) % PID_COUNT;
 }
 
@@ -81,7 +80,7 @@ static void tx_timer_cb(void *arg) {
 esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
 
     // Queues
-    tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(twai_frame_t));
+    tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(tx_item_t));
 
     if (!tx_queue) return ESP_FAIL;
 
@@ -177,8 +176,7 @@ esp_err_t request_pid(uint8_t pid){
 // ================= TWAI TX Task =================
 void twai_tx_task(void *arg) {
     
-    can_frame_t _frame;
-    twai_frame_t tx_frame;
+    twai_frame_t tx_q_frame, tx_frame;
     static uint8_t buf[8];
     enum Mode mode = IDLE;
     bus_msg_t from_ble_msg;
@@ -212,16 +210,11 @@ void twai_tx_task(void *arg) {
         // MODE
         if (mode == STREAM) {
             // Stream received data
-            if (xQueueReceive(tx_queue, &_frame, portMAX_DELAY) == pdTRUE) {
-                tx_frame.header.id = _frame.id;
-                tx_frame.header.ide = 0;
-                tx_frame.header.rtr = 0;
-                tx_frame.buffer_len = _frame.dlc;
+            tx_item_t item;
 
-                memcpy(buf, _frame.data, _frame.dlc);
-                tx_frame.buffer = buf;
-
-                twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
+            if (xQueueReceive(tx_queue, &item, portMAX_DELAY) == pdTRUE) {
+                item.frame.buffer = item.payload;
+                twai_node_transmit(node_hdl, &item.frame, pdMS_TO_TICKS(10));
             }
 
         }else if (mode == SUPP_PIDS){
@@ -237,7 +230,7 @@ void twai_tx_task(void *arg) {
             vTaskDelay(pdMS_TO_TICKS(250));
 
         }else if ( mode == DTC) {
-            request_dtc();
+            request_dtc(); 
             mode = IDLE;
 
         }else if ( mode == PID_CMD){
