@@ -57,7 +57,6 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  struct ble_gatt_access_ctxt *ctxt, void *arg) {
     /* Local variables */
     int rc;
-    static int test = 0;
 
     /* Handle access events */
     switch (ctxt->op) {
@@ -105,9 +104,10 @@ static int obd_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                  len,
                                  NULL);
 
-        bus_msg_t msg;
+        /*bus_msg_t msg;
         msg.command.cmd = obd_chr_val[0];
         msg.command.pid = obd_chr_val[1];
+        */
 
         if (rx_callback) {
             rx_callback(obd_chr_val, len);

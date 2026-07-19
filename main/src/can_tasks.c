@@ -176,8 +176,6 @@ esp_err_t request_pid(uint8_t pid){
 // ================= TWAI TX Task =================
 void twai_tx_task(void *arg) {
     
-    twai_frame_t tx_q_frame, tx_frame;
-    static uint8_t buf[8];
     enum Mode mode = IDLE;
     bus_msg_t from_ble_msg;
     static uint8_t _pids = 0, _cmd, _pid, prev_pid;
