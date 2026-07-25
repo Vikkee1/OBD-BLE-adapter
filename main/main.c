@@ -17,6 +17,7 @@
 
 /* CAN task APIs */
 #include "can_tasks.h"
+#include "obd_request_task.h"
 
 /* BLE APIs*/
 #include "ble_stack.h"
@@ -85,8 +86,9 @@ void app_main(void)
     /* Start BLE stack*/
     ble_stack_start();
 
-    /* Create CAN RX and TX tasks */
-    xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, NULL, 1);
+    /* Create CAN TX task */
+    xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, &tx_task_handle, 1);
+    xTaskCreate(obd_request_task, "OBD task", 2048, NULL, 3, NULL);
 
     /* Start BLE task */
     xTaskCreate(ble_tx_task, "BLE TX task", 4*1024, NULL, 5, NULL);
