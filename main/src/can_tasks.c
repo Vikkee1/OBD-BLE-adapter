@@ -78,21 +78,23 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
     return ESP_OK;
 }
 
-esp_err_t can_transmit(uint32_t id, const uint8_t payload[8],
-                       can_tx_priority_t prio)
-{
-    if (!node_hdl || !can_tx_queue) return ESP_ERR_INVALID_STATE;
+esp_err_t can_send(uint32_t id, const uint8_t payload[8], const uint8_t len){
+    if (!node_hdl) return ESP_ERR_INVALID_STATE;
 
-    can_frame_t frame;
-    frame.id  = id;
-    frame.dlc = 8;
-    memcpy(frame.data, payload, 8);
+    static uint8_t tx_buf[8];
+    static twai_frame_t tx_frame = {
+        .buffer = tx_buf,
+        .buffer_len = sizeof(tx_buf),
+    };
 
-    BaseType_t ok = (prio == CAN_TX_URGENT)
-                  ? xQueueSendToFront(can_tx_queue, &frame, 0)
-                  : xQueueSend(can_tx_queue, &frame, 0);
+    tx_frame.header.id = id;
+    tx_frame.header.ide = 0;
+    tx_frame.header.rtr = 0;
+    tx_frame.buffer_len = len;
 
-    return (ok == pdTRUE) ? ESP_OK : ESP_ERR_NO_MEM;
+    memcpy(tx_frame.buffer, payload, len);
+
+    return twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
 }
 
 // ================= TWAI TX Task =================

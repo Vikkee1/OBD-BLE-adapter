@@ -43,5 +43,4 @@ void twai_tx_task(void *arg);
 /** Queue a classic 8-byte CAN frame for transmission.
  *  @return ESP_OK if accepted into the TX queue (not yet on the wire),
  *          ESP_ERR_NO_MEM if the queue is full. */
-esp_err_t can_transmit(uint32_t id, const uint8_t payload[8],
-                       can_tx_priority_t prio);
+esp_err_t can_send(uint32_t id, const uint8_t payload[8], const uint8_t len);

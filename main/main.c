@@ -86,8 +86,6 @@ void app_main(void)
     /* Start BLE stack*/
     ble_stack_start();
 
-    /* Create CAN TX task */
-    xTaskCreate(twai_tx_task, "TWAI_TX", 2*2048, NULL, 4, NULL);
     xTaskCreate(obd_request_task, "OBD task", 2*2048, NULL, 3, NULL);
 
     /* Start BLE task */

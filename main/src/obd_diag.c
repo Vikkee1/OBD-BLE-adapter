@@ -38,7 +38,7 @@ static void send_flow_control(uint32_t resp_id)
     p[2] = OBD_FC_STMIN;
 
     /* Addressed to the ECU that answered, never to 0x7DF. */
-    if (can_transmit(OBD_REQ_ID_FUNC, p, CAN_TX_NORMAL) != ESP_OK) {
+    if (can_send(OBD_REQ_ID_FUNC, p, 8) != ESP_OK) {
         ESP_LOGW(OBD_TAG, "FC drop, tx_queue full");
     }
 }
@@ -60,7 +60,7 @@ static esp_err_t obd_start_request(obd_ctx_t *c, uint8_t service,
         p[2] = pid;
     }
 
-    if (can_transmit(OBD_REQ_ID_FUNC, p, CAN_TX_NORMAL) != ESP_OK) {
+    if (can_send(OBD_REQ_ID_FUNC, p, 8) != ESP_OK) {
         ESP_LOGE(OBD_TAG, "TX failed, retry next tick");
         return ESP_FAIL;          /* stay REQ_IDLE, poll gap still applies */
     }
