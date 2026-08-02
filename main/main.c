@@ -69,8 +69,8 @@ void app_main(void)
     /* Initialize message bus */
     mailbox_init();
 
-    /* InitializeTWAI*/
-    init_TWAI(IO_TX, IO_RX);
+    /* Initialize CAN*/
+    init_CAN(IO_TX, IO_RX);
 
     /* Initialize BLE stack */
     ble_stack_init();
@@ -86,6 +86,7 @@ void app_main(void)
     /* Start BLE stack*/
     ble_stack_start();
 
+    /* Start OBD scheduler */
     xTaskCreate(obd_request_task, "OBD task", 2*2048, NULL, 3, NULL);
 
     /* Start BLE task */

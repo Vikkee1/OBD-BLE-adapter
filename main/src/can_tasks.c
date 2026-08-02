@@ -1,13 +1,10 @@
 #include "can_tasks.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "can_types.h"
 #include "obd_diag.h"
 
 /* Global handles */
 twai_node_handle_t node_hdl = NULL;
-QueueHandle_t can_tx_queue = NULL;
-QueueHandle_t can_rx_queue = NULL;
 
 // ================= TWAI RX Callback =================
 static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *user_ctx)
@@ -23,23 +20,18 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
 
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame)) {
 
-        /* Only forward OBD responses; drop everything else in the ISR. */
-        if (rx_frame.header.id > OBD_RESP_ID_FIRST ||
-            rx_frame.header.id < OBD_RESP_ID_LAST) {
-
-            uint8_t dlc = rx_frame.header.dlc;
-            if (dlc > sizeof(((app_msg_t *)0)->frame.data)) {
-                dlc = sizeof(((app_msg_t *)0)->frame.data);
-            }
-
-            msg.type = MSG_CAN_FRAME;
-            msg.frame.id = rx_frame.header.id;
-            msg.frame.dlc = dlc;
-        
-            memcpy(msg.frame.data, rx_frame.buffer, dlc);
-
-            obd_mailbox_post_from_isr(&msg, &hpw);
+        uint8_t dlc = rx_frame.header.dlc;
+        if (dlc > sizeof(((app_msg_t *)0)->frame.data)) {
+            dlc = sizeof(((app_msg_t *)0)->frame.data);
         }
+
+        msg.type = MSG_CAN_FRAME;
+        msg.frame.id = rx_frame.header.id;
+        msg.frame.dlc = dlc;
+    
+        memcpy(msg.frame.data, rx_frame.buffer, dlc);
+
+        obd_mailbox_post_from_isr(&msg, &hpw);
     }
 
     /* Return the yield flag; the driver performs the context switch. */
@@ -47,19 +39,20 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
 }
 
 // ================= TWAI Initialization =================
-esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
-
-    // Queues
-    can_tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(can_frame_t));
-
-    if (!can_tx_queue) return ESP_FAIL;
+esp_err_t init_CAN(uint8_t tx_io, uint8_t rx_io){
 
     // Node config
     twai_onchip_node_config_t node_config = {
-        .io_cfg.tx = tx_io,             // TWAI TX GPIO pin
-        .io_cfg.rx = rx_io,             // TWAI RX GPIO pin
-        .bit_timing.bitrate = 500000,   // 200 kbps bitrate
-        .tx_queue_depth = 10,           // Transmit queue depth
+        .io_cfg.tx = tx_io,                     // TWAI TX GPIO pin
+        .io_cfg.rx = rx_io,                     // TWAI RX GPIO pin
+        .bit_timing.bitrate = BITRATE_500_KBPS, // bitrate
+        .tx_queue_depth = TX_QUEUE_LENGTH,      // Transmit queue depth
+    };
+
+    twai_mask_filter_config_t mfilter_config = {
+        .id     = OBD_RESP_ID_FIRST,   /* OBD_RESP_ID_FIRST */
+        .mask   = 0x7F8,
+        .is_ext = false,
     };
 
     twai_event_callbacks_t user_cbs = {
@@ -79,53 +72,22 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
 }
 
 esp_err_t can_send(uint32_t id, const uint8_t payload[8], const uint8_t len){
+    
     if (!node_hdl) return ESP_ERR_INVALID_STATE;
 
-    static uint8_t tx_buf[8];
-    static twai_frame_t tx_frame = {
+    uint8_t tx_buf[8];
+    twai_frame_t tx_frame = {
+        .header = {
+            .id = id,
+            .ide = 0,  // 0 = Standard (11-bit), 1 = Extended (29-bit)
+            .rtr = 0,  // 0 = Data Frame, 1 = Remote Frame
+            .dlc = len // Data Length Code (optional if buffer_len is set)
+        },
         .buffer = tx_buf,
-        .buffer_len = sizeof(tx_buf),
+        .buffer_len = len,
     };
-
-    tx_frame.header.id = id;
-    tx_frame.header.ide = 0;
-    tx_frame.header.rtr = 0;
-    tx_frame.buffer_len = len;
 
     memcpy(tx_frame.buffer, payload, len);
 
     return twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
-}
-
-// ================= TWAI TX Task =================
-void twai_tx_task(void *arg) {
-    
-    ESP_LOGI(CAN_TAG, "CAN TX task created");
-
-    can_frame_t bus_frame;
-    static uint8_t tx_buf[8];
-    static twai_frame_t tx_frame = {
-        .buffer = tx_buf,
-        .buffer_len = sizeof(tx_buf),
-    };
-
-    tx_frame.header.ide = 0;
-    tx_frame.header.rtr = 0;
-
-    for(;;) {
-
-        /* Block until at least one frame is queued — yields the CPU. */
-        if (xQueueReceive(can_tx_queue, &bus_frame, portMAX_DELAY) == pdTRUE) {
-
-            tx_frame.header.id = bus_frame.id;
-            tx_frame.buffer_len = bus_frame.dlc;
-            
-            memcpy(tx_frame.buffer, bus_frame.data, bus_frame.dlc);
-
-            esp_err_t err = twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
-            if (err != ESP_OK) {
-                ESP_LOGW(CAN_TAG, "TX failed: %s", esp_err_to_name(err));
-            }
-        }
-    }
 }
