@@ -29,27 +29,27 @@ static bool ble_send( const uint8_t *data, size_t len) {
 }
 
 static void ble_disconnect_handler(void){
-    bus_msg_t msg;
+    app_msg_t msg;
 
     /* On disconnect, tell the CAN side to stop streaming (cmd 0x00 -> IDLE). */
-    msg.type = BUS_CMD;
+    msg.type = MSG_BLE_COMMAND;
     msg.command.cmd = 0x00;
     msg.command.pid = 0x00;
 
-    if (!bus_to_can_post(&msg)) {
-        ESP_LOGW("BUS", "BLE->CAN queue full");
+    if (!obd_mailbox_post(&msg)) {
+        ESP_LOGW("BUS", "BLE->OBD queue full");
     }
 }
 
 static void ble_rx_handler(uint8_t *data, uint16_t len) {
-    bus_msg_t msg;
+    app_msg_t msg;
 
     /* BLE write carries a command: data[0] = cmd, data[1] = pid. */
-    msg.type = BUS_CMD;
+    msg.type = MSG_BLE_COMMAND;
     msg.command.cmd = (len > 0) ? data[0] : 0x00;
     msg.command.pid = (len > 1) ? data[1] : 0x00;
 
-    if (!bus_to_can_post(&msg)) {
+    if (!obd_mailbox_post(&msg)) {
         ESP_LOGW("BUS", "BLE->CAN queue full");
     }
 }
@@ -63,15 +63,14 @@ void ble_tx_task(void *param)
 {
     ESP_LOGI(BLE_TASK_TAG, "BLE TX task started");
 
-    bus_msg_t msg;
+    app_msg_t msg;
 
     while (1) {
 
-        if (bus_to_ble_get(&msg, portMAX_DELAY)) {
-            ESP_LOGI(BLE_TASK_TAG, "SEND: %x %x %x", msg.frame.data[0], msg.frame.data[1], msg.frame.data[2]);
+        if (ble_mailbox_receive(&msg, portMAX_DELAY)) {
             if (is_connected()) {
                 if(!ble_send(msg.frame.data, msg.frame.dlc)){
-                    ESP_LOGW(GATT_TAG, "SEND FAILED");
+                    ESP_LOGE(BLE_TASK_TAG, "SEND FAILED");
                 };
             }
         }

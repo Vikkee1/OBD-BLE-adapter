@@ -17,7 +17,7 @@
 
 /* CAN task APIs */
 #include "can_tasks.h"
-#include "obd_request_task.h"
+#include "obd_diag.h"
 
 /* BLE APIs*/
 #include "ble_stack.h"
@@ -61,16 +61,16 @@ esp_err_t init_nvs(void){
 void app_main(void)
 {
 
-    /* InitializeTWAI*/
-    init_TWAI(IO_TX, IO_RX);
-
     /* Initialize NVS */
     if (init_nvs() != ESP_OK) {
         return;
     }
 
     /* Initialize message bus */
-    message_bus_init();
+    mailbox_init();
+
+    /* InitializeTWAI*/
+    init_TWAI(IO_TX, IO_RX);
 
     /* Initialize BLE stack */
     ble_stack_init();
@@ -87,8 +87,8 @@ void app_main(void)
     ble_stack_start();
 
     /* Create CAN TX task */
-    xTaskCreatePinnedToCore(twai_tx_task, "TWAI_TX", 2*2048, NULL, 3, &tx_task_handle, 1);
-    xTaskCreate(obd_request_task, "OBD task", 2048, NULL, 3, NULL);
+    xTaskCreate(twai_tx_task, "TWAI_TX", 2*2048, NULL, 4, NULL);
+    xTaskCreate(obd_request_task, "OBD task", 2*2048, NULL, 3, NULL);
 
     /* Start BLE task */
     xTaskCreate(ble_tx_task, "BLE TX task", 4*1024, NULL, 5, NULL);

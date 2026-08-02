@@ -3,28 +3,29 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
+#include "can_types.h"
 
-typedef enum { BUS_CMD, BUS_OBD_FRAME, BUS_STATUS } bus_msg_type_t;
+typedef enum {
+    MSG_BLE_COMMAND,    /* BLE CMD: {cmd, pid}        */
+    MSG_CAN_FRAME,      /* CAN: raw response frame */
+    MSG_OBD_RESULT,     /* decoded/reassembled OBD payload  */
+    MSG_STATUS          /* timeout, mode change, error  */
+} app_msg_type_t;
 
 typedef struct {
-    bus_msg_type_t type;
+    app_msg_type_t type;
     union {
-        struct { uint8_t cmd, pid; }                command;   /* to_can */
-        struct { uint32_t id; uint8_t dlc, data[8]; } frame;   /* to_ble */
-        struct { uint8_t code; }                    status;    /* either  */
+        struct { uint8_t cmd, pid; }    command;    /* command */
+        can_frame_t                     frame;      /* data frame */
+        struct { uint32_t id; uint16_t len; uint8_t data[64]; } result;
+        struct { uint8_t code; }        status;     /* either  */
     };
-} bus_msg_t;
+} app_msg_t;
 
-typedef struct __attribute__((packed)) {
-    uint16_t rpm;
-    uint8_t speed;
-    uint8_t coolant_temp;
-    uint8_t fuel_level;
-} obd_data_t;
+void mailbox_init(void);
+bool obd_mailbox_post(const app_msg_t *msg);
+bool obd_mailbox_post_from_isr(const app_msg_t *msg, BaseType_t *hpw);
+bool obd_mailbox_receive(app_msg_t *msg, uint32_t timeout_ms);
 
-void message_bus_init(void);
-bool bus_to_can_post(const bus_msg_t *m);            /* BLE side produces */
-bool bus_to_can_get (bus_msg_t *m, uint32_t to_ms);  /* twai_tx_task consumes */
-bool bus_to_ble_post(const bus_msg_t *m);            /* CAN side produces */
-bool bus_to_ble_get (bus_msg_t *m, uint32_t to_ms);  /* ble_tx_task consumes */
-bool bus_to_ble_post_from_isr(const bus_msg_t *msg, BaseType_t *higher_prio_woken);
+bool ble_mailbox_post(const app_msg_t *msg);
+bool ble_mailbox_receive(app_msg_t *msg, uint32_t timeout_ms);

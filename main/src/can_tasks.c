@@ -1,13 +1,13 @@
 #include "can_tasks.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "message_bus.h"
 #include "can_types.h"
+#include "obd_diag.h"
 
 /* Global handles */
 twai_node_handle_t node_hdl = NULL;
-QueueHandle_t tx_queue = NULL;
-
+QueueHandle_t can_tx_queue = NULL;
+QueueHandle_t can_rx_queue = NULL;
 
 // ================= TWAI RX Callback =================
 static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_t *edata, void *user_ctx)
@@ -19,23 +19,26 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
     };
     BaseType_t hpw = pdFALSE;
 
+    app_msg_t msg;
+
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame)) {
 
         /* Only forward OBD responses; drop everything else in the ISR. */
-        if (rx_frame.header.id > 0x700) {
+        if (rx_frame.header.id > OBD_RESP_ID_FIRST ||
+            rx_frame.header.id < OBD_RESP_ID_LAST) {
 
             uint8_t dlc = rx_frame.header.dlc;
-            if (dlc > sizeof(((bus_msg_t *)0)->frame.data)) {
-                dlc = sizeof(((bus_msg_t *)0)->frame.data);
+            if (dlc > sizeof(((app_msg_t *)0)->frame.data)) {
+                dlc = sizeof(((app_msg_t *)0)->frame.data);
             }
 
-            /* Copy the payload by value now — rx_buf is reused on every frame. */
-            bus_msg_t msg = { .type = BUS_OBD_FRAME };
-            msg.frame.id  = rx_frame.header.id;
+            msg.type = MSG_CAN_FRAME;
+            msg.frame.id = rx_frame.header.id;
             msg.frame.dlc = dlc;
+        
             memcpy(msg.frame.data, rx_frame.buffer, dlc);
 
-            bus_to_ble_post_from_isr(&msg, &hpw);
+            obd_mailbox_post_from_isr(&msg, &hpw);
         }
     }
 
@@ -47,9 +50,9 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
 esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
 
     // Queues
-    tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(tx_item_t));
+    can_tx_queue = xQueueCreate(TX_QUEUE_LENGTH, sizeof(can_frame_t));
 
-    if (!tx_queue) return ESP_FAIL;
+    if (!can_tx_queue) return ESP_FAIL;
 
     // Node config
     twai_onchip_node_config_t node_config = {
@@ -75,27 +78,52 @@ esp_err_t init_TWAI(uint8_t tx_io, uint8_t rx_io){
     return ESP_OK;
 }
 
+esp_err_t can_transmit(uint32_t id, const uint8_t payload[8],
+                       can_tx_priority_t prio)
+{
+    if (!node_hdl || !can_tx_queue) return ESP_ERR_INVALID_STATE;
+
+    can_frame_t frame;
+    frame.id  = id;
+    frame.dlc = 8;
+    memcpy(frame.data, payload, 8);
+
+    BaseType_t ok = (prio == CAN_TX_URGENT)
+                  ? xQueueSendToFront(can_tx_queue, &frame, 0)
+                  : xQueueSend(can_tx_queue, &frame, 0);
+
+    return (ok == pdTRUE) ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
 // ================= TWAI TX Task =================
 void twai_tx_task(void *arg) {
     
     ESP_LOGI(CAN_TAG, "CAN TX task created");
 
-    tx_item_t item;
+    can_frame_t bus_frame;
+    static uint8_t tx_buf[8];
+    static twai_frame_t tx_frame = {
+        .buffer = tx_buf,
+        .buffer_len = sizeof(tx_buf),
+    };
 
-    while (1) {
+    tx_frame.header.ide = 0;
+    tx_frame.header.rtr = 0;
+
+    for(;;) {
 
         /* Block until at least one frame is queued — yields the CPU. */
-        if (xQueueReceive(tx_queue, &item, portMAX_DELAY) != pdTRUE) {
-            continue;
-        }
+        if (xQueueReceive(can_tx_queue, &bus_frame, portMAX_DELAY) == pdTRUE) {
 
-        do {
-            item.frame.buffer = item.payload;
-            esp_err_t err = twai_node_transmit(node_hdl, &item.frame, pdMS_TO_TICKS(10));
+            tx_frame.header.id = bus_frame.id;
+            tx_frame.buffer_len = bus_frame.dlc;
+            
+            memcpy(tx_frame.buffer, bus_frame.data, bus_frame.dlc);
+
+            esp_err_t err = twai_node_transmit(node_hdl, &tx_frame, pdMS_TO_TICKS(10));
             if (err != ESP_OK) {
                 ESP_LOGW(CAN_TAG, "TX failed: %s", esp_err_to_name(err));
             }
-        } while (xQueueReceive(tx_queue, &item, 0) == pdTRUE);   /* drain backlog */
+        }
     }
-
 }
