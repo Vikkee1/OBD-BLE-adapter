@@ -69,7 +69,6 @@
 /* ============================================================
  * PIDs
  * ============================================================ */
-#define PID_COUNT           5
 #define COOLANT_TEMP_PID    0x05
 #define RPM_PID             0x0C
 #define SPEED_PID           0x0D

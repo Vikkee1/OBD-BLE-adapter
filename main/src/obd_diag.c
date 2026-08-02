@@ -1,9 +1,29 @@
 #include "obd_diag.h"
 #include <string.h>
 
-static const uint8_t requested_pids[PID_COUNT] = {
-    RPM_PID, COOLANT_TEMP_PID, SPEED_PID, ENGINE_LOAD_PID, FUEL_LEVEL_PID
+typedef struct {
+    uint8_t  pid;
+    uint8_t  resp_len;      /* payload bytes after the echoed PID */
+    uint16_t period_ms;     /* filled in now, IGNORED this commit */
+    float  (*decode)(const uint8_t *d);
+    const char *name;
+} pid_desc_t;
+
+static float dec_rpm(const uint8_t *d)   { return ((d[0] << 8) | d[1]) / 4.0f; }
+static float dec_speed(const uint8_t *d) { return d[0]; }
+static float dec_coolant(const uint8_t *d) { return d[0] - 40.0f; }
+
+static const pid_desc_t pid_table[] = {
+    { 0x0C, 2,  50, dec_rpm,     "rpm"     },
+    { 0x0D, 1, 100, dec_speed,   "speed"   },
+    { 0x05, 1, 1000, dec_coolant, "coolant" },
 };
+
+#define PID_COUNT (sizeof(pid_table)/sizeof(pid_table[0]))
+
+/*static const uint8_t requested_pids[PID_COUNT] = {
+    RPM_PID, COOLANT_TEMP_PID, SPEED_PID, ENGINE_LOAD_PID, FUEL_LEVEL_PID
+};*/
 
 static const uint8_t supp_blocks[SUPP_BLOCK_COUNT] = {
     0x00, 0x20, 0x40, 0x60, 0x80, 0xA0
@@ -331,7 +351,7 @@ static void obd_schedule(obd_ctx_t *c)
 
     switch (c->mode) {
     case STREAM:
-        obd_start_request(c, 0x01, requested_pids[c->pid_index], true);
+        obd_start_request(c, 0x01, pid_table[c->pid_index].pid, true);
         break;
     case SUPP_PIDS:
         obd_start_request(c, 0x01, supp_blocks[c->supp_index], true);
