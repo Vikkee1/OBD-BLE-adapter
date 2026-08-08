@@ -61,7 +61,7 @@
 #define OBD_P2_TIMEOUT_MS       100   /* P2_CAN is 50 ms; 100 = margin      */
 #define OBD_P2_STAR_TIMEOUT_MS  5000  /* extended window after NRC 0x78     */
 #define OBD_N_CR_TIMEOUT_MS     150   /* max gap between consecutive frames */
-#define OBD_MIN_POLL_GAP_MS     100    /* hard floor between two requests    */
+#define OBD_MIN_POLL_GAP_MS     50    /* hard floor between two requests    */
 #define OBD_IDLE_BACKOFF_MS     1000  /* gap used when the bus looks dead   */
 #define OBD_MAX_RETRIES         2
 #define OBD_TASK_MAX_SLEEP_MS   100
@@ -74,6 +74,8 @@
 #define SPEED_PID           0x0D
 #define ENGINE_LOAD_PID     0x04
 #define FUEL_LEVEL_PID      0x2F
+
+#define MAX_PID_COUNT       10
 
 #define SUPP_BLOCK_COUNT    6       /* 0x00,0x20,0x40,0x60,0x80,0xA0 */
 
@@ -101,6 +103,7 @@ typedef struct {
     size_t    pid_index;
     size_t    supp_index;
     uint8_t   oneshot_pid;
+    uint32_t next_due[MAX_PID_COUNT];
 
     /* outstanding transaction */
     obd_req_state_t state;

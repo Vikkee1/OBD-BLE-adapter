@@ -4,7 +4,7 @@
 typedef struct {
     uint8_t  pid;
     uint8_t  resp_len;      /* payload bytes after the echoed PID */
-    uint16_t period_ms;     /* filled in now, IGNORED this commit */
+    uint16_t period_ms; 
     float  (*decode)(const uint8_t *d);
     const char *name;
 } pid_desc_t;
@@ -12,14 +12,18 @@ typedef struct {
 static float dec_rpm(const uint8_t *d)   { return ((d[0] << 8) | d[1]) / 4.0f; }
 static float dec_speed(const uint8_t *d) { return d[0]; }
 static float dec_coolant(const uint8_t *d) { return d[0] - 40.0f; }
+static float dec_level(const uint8_t *d) {return (d[0] * (100 / 255));}
 
 static const pid_desc_t pid_table[] = {
-    { 0x0C, 2,  50, dec_rpm,     "rpm"     },
-    { 0x0D, 1, 100, dec_speed,   "speed"   },
-    { 0x05, 1, 1000, dec_coolant, "coolant" },
+    { RPM_PID,          2,  50,     dec_rpm,        "rpm"       },
+    { ENGINE_LOAD_PID,  1,  50,     dec_level,      "load"      },
+    { SPEED_PID,        1, 100,     dec_speed,      "speed"     },
+    { COOLANT_TEMP_PID, 1, 2500,    dec_coolant,    "coolant"   },
+    { FUEL_LEVEL_PID,   1, 2500,    dec_level,      "fuel_level"},
 };
 
 #define PID_COUNT (sizeof(pid_table)/sizeof(pid_table[0]))
+static int      active_idx = -1; 
 
 /*static const uint8_t requested_pids[PID_COUNT] = {
     RPM_PID, COOLANT_TEMP_PID, SPEED_PID, ENGINE_LOAD_PID, FUEL_LEVEL_PID
@@ -96,30 +100,58 @@ static esp_err_t obd_start_request(obd_ctx_t *c, uint8_t service,
     return ESP_OK;
 }
 
+static int pick_due_pid(uint32_t now, uint32_t next_due[]){
+    int best = -1;
+    int best_late = -1;
+
+    for(int i=0; i < PID_COUNT; i++){
+        int32_t late = (int32_t)(now - next_due[i]);
+
+        if (late >= 0 && late > best_late){
+            best_late = late;
+            best = i;
+        }
+    }
+    return best;
+}
+
+static void init_due_table(obd_ctx_t *c){
+    uint32_t now = now_ms();
+    for (int i=0; i < PID_COUNT; i++){
+        c->next_due[i] = now + i * 10;
+    }
+
+    active_idx = -1;
+}
+
+static void rearm_active(obd_ctx_t *c) {
+    c->next_due[c->pid_index] = now_ms() + pid_table[c->pid_index].period_ms;
+}
+
 /* ============================================================
- * Transaction completion. This is what unblocks the next
+ * Transaction completion. Unblocks the next
  * request: state goes back to REQ_IDLE and the scheduler is
  * free to fire again once poll_gap_ms has elapsed.
  * ============================================================ */
 static void obd_advance(obd_ctx_t *c)
 {
     switch (c->mode) {
-    case STREAM:
-        c->pid_index = (c->pid_index + 1) % PID_COUNT;
-        break;
-    case SUPP_PIDS:
-        if (++c->supp_index >= SUPP_BLOCK_COUNT) {
-            c->supp_index = 0;
-            c->mode = IDLE;           /* sweep finished */
-        }
-        break;
-    case DTC:
-    case ONE_SHOT:
-    case VIN:
-        c->mode = IDLE;               /* one-shot modes */
-        break;
-    default:
-        break;
+        case STREAM:
+            rearm_active(c);
+            break;
+        case SUPP_PIDS:
+            if (++c->supp_index >= SUPP_BLOCK_COUNT) {
+                c->supp_index = 0;
+                c->mode = IDLE;           /* sweep finished */
+            }
+            break;
+        case DTC:
+        case ONE_SHOT:
+        case VIN:
+            c->mode = IDLE;               /* one-shot modes */
+            break;
+        default:
+            break;
     }
 }
 
@@ -170,7 +202,7 @@ static void obd_deliver(uint32_t id, const uint8_t *data, uint16_t len)
 }
 
 /* ============================================================
- * Service payload match
+ * Service payload handling
  * ============================================================ */
 static bool service_matches(const obd_ctx_t *c, const uint8_t *d, uint16_t len)
 {
@@ -336,12 +368,13 @@ static void obd_check_timeout(obd_ctx_t *c)
 
 /* ============================================================
  * Scheduler: the only place a request is born.
- * Two gates, both mandatory:
+ * Two gates:
  *   1. no transaction outstanding
  *   2. at least poll_gap_ms since the last frame we put on the bus
  * ============================================================ */
 static void obd_schedule(obd_ctx_t *c)
 {
+    int i = -1;
     if (c->state != REQ_IDLE) {
         return;                                        /* gate 1 */
     }
@@ -351,7 +384,10 @@ static void obd_schedule(obd_ctx_t *c)
 
     switch (c->mode) {
     case STREAM:
-        obd_start_request(c, 0x01, pid_table[c->pid_index].pid, true);
+        i = (c->retries > 0) ? c->pid_index : pick_due_pid(now_ms(), c->next_due);
+        if (i<0) break;
+        c->pid_index = i;
+        obd_start_request(c, 0x01, pid_table[i].pid, true);
         break;
     case SUPP_PIDS:
         obd_start_request(c, 0x01, supp_blocks[c->supp_index], true);
@@ -380,7 +416,7 @@ static void obd_handle_cmd(obd_ctx_t *c, uint8_t cmd, uint8_t pid)
 
     switch (cmd) {
     case STOP_CMD:      c->mode = IDLE;                          break;
-    case START_CMD:     c->mode = STREAM;    c->pid_index  = 0;  break;
+    case START_CMD:     c->mode = STREAM;    init_due_table(c);  break;
     case SUPP_PID_CMD:  c->mode = SUPP_PIDS; c->supp_index = 0;  break;
     case DTC_CMD:       c->mode = DTC;                           break;
     case VIN_CMD:       c->mode = VIN;                           break;
@@ -411,13 +447,19 @@ static uint32_t next_wakeup_ms(const obd_ctx_t *c)
         w = ms_until(c->deadline_ms);                 /* P2 / N_Cr */
     } else {
         w = ms_until(c->last_tx_ms + c->poll_gap_ms); /* poll gap  */
+        if (c->mode == STREAM) {
+            for (int i = 0; i < PID_COUNT; i++) {
+                uint32_t d = ms_until(c->next_due[i]);
+                if (d < w) w = d;
+            }
+        }
     }
 
     return (w > OBD_TASK_MAX_SLEEP_MS) ? OBD_TASK_MAX_SLEEP_MS : w;
 }
 
 /* ============================================================
- * Task
+ * OBD Task
  * ============================================================ */
 void obd_request_task(void *arg)
 {
@@ -435,9 +477,9 @@ void obd_request_task(void *arg)
     for (;;) {
         /* Blocks until a CAN frame or a BLE command arrives, or until
          * the next timer expires. A matching response therefore wakes
-         * this task immediately -- no fixed 50/100/250 ms delays. */
+         * this task immediately -- no fixed ms delays. */
 
-        if (obd_mailbox_receive(&msg, OBD_MIN_POLL_GAP_MS)) {
+        if (obd_mailbox_receive(&msg, next_wakeup_ms(&ctx))) {
             switch (msg.type) {
             case MSG_BLE_COMMAND:   obd_handle_cmd(&ctx, msg.command.cmd, msg.command.pid); break;
             case MSG_CAN_FRAME:  obd_handle_frame(&ctx, &msg.frame);                     break;
