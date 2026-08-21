@@ -1,0 +1,8 @@
+# Common configuration for all supported targets. ESP-IDF applies this
+# file first, then merges sdkconfig.defaults.<target> for the target
+# selected via `idf.py set-target <target>`, then generates the full
+# `sdkconfig` (not tracked in git - see .gitignore).
+
+# NimBLE host is required for the BLE GATT server (ble_stack.c, gap.c, gatt.c)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y

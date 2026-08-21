@@ -1,0 +1,3 @@
+# ESP32-C3-DevKitM-1 onboard addressable RGB LED.
+# Untested target - adjust CAN/LED GPIOs to match your actual board wiring.
+CONFIG_OBD_LED_GPIO=8

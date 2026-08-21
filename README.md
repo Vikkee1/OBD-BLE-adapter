@@ -24,7 +24,10 @@ The companion phone application that reads and displays the data is a separate p
   consume asynchronously, and the CAN RX ISR posts straight into the OBD task's queue.
 - **Hardware CAN filtering** — the TWAI controller only accepts the OBD response range, so the CPU
   never sees the rest of the vehicle's traffic.
-- **CI** — every push to `main` builds the project against ESP-IDF v5.5.1 for `esp32s3`.
+- **Kconfig-based board config** — CAN and status-LED GPIOs are `idf.py menuconfig` options
+  (`main/Kconfig.projbuild`), not `#define`s, with per-target defaults in `sdkconfig.defaults.<target>`.
+- **CI** — every push to `main` builds the project against ESP-IDF v5.5.1 across a target matrix
+  (`esp32s3`, `esp32`, `esp32c3`).
 
 ---
 
@@ -32,19 +35,23 @@ The companion phone application that reads and displays the data is a separate p
 
 | Item | Requirement |
 | --- | --- |
-| MCU | BLE-capable ESP32 with a TWAI controller — **ESP32-S3 is the tested target** |
+| MCU | BLE-capable ESP32 with a TWAI controller — **ESP32-S3 is the tested target**; `esp32` and `esp32c3` build in CI but are untested on real hardware |
 | Transceiver | Any 5 V/3.3 V CAN transceiver (SN65HVD230, TJA1050, MCP2551, …) |
 | Bus | 11-bit CAN, **500 kbit/s** |
 
-Default pin assignment (`main/main.c`):
+GPIO pins are project configuration (`main/Kconfig.projbuild`), not source code — set them with
+`idf.py menuconfig` under **OBD-BLE Adapter**, or by editing `sdkconfig.defaults.<target>`. Defaults:
 
-| Signal | GPIO |
-| --- | --- |
-| CAN TX (to transceiver) | `5` |
-| CAN RX (from transceiver) | `4` |
-| WS2812 status LED | `48` |
+| Signal | Kconfig option | Default (esp32s3 / esp32c3 / esp32) |
+| --- | --- | --- |
+| CAN TX (to transceiver) | `CONFIG_OBD_CAN_TX_GPIO` | `5` |
+| CAN RX (from transceiver) | `CONFIG_OBD_CAN_RX_GPIO` | `4` |
+| WS2812 status LED | `CONFIG_OBD_LED_GPIO` | `48` / `8` / `2` |
 
-Change the `IO_TX`, `IO_RX` and `WS2812_GPIO` defines at the top of `main/main.c` to match your board.
+The LED default tracks each target's onboard addressable RGB LED (S3-DevKitC-1 / C3-DevKitM-1); plain
+ESP32 boards typically don't have one, so that default is just a placeholder — `ws2812_init()` isn't
+called yet anyway (see known limitations below). Override any of these to match your actual board
+wiring.
 
 ---
 
@@ -172,10 +179,13 @@ resend. After roughly two full sweeps with no answer the adapter backs off to on
 Requires an installed **ESP-IDF** environment (CI uses **v5.5.1**).
 
 ```bash
-idf.py set-target esp32s3
+idf.py set-target esp32s3   # or esp32, esp32c3
 idf.py build
 idf.py flash monitor
 ```
+
+`idf.py set-target` picks up `sdkconfig.defaults` plus the matching `sdkconfig.defaults.<target>`
+automatically; the generated `sdkconfig` is target-specific and not tracked in git.
 
 A dev container is included (`.devcontainer/`) based on the `espressif/idf` image with QEMU added,
 so the project can be opened directly in VS Code Dev Containers or GitHub Codespaces without a local
@@ -191,9 +201,10 @@ toolchain install.
 │   ├── include/            # public headers, protocol constants, message types
 │   └── src/                # ble_stack, gap, gatt, ble_tasks, can_tasks, obd_diag, message_bus, ws2812
 ├── .devcontainer/          # ESP-IDF + QEMU dev container
-├── .github/workflows/      # build CI (esp-idf-ci-action, esp32s3)
+├── .github/workflows/      # build CI (esp-idf-ci-action, matrix over esp32s3/esp32/esp32c3)
 ├── CMakeLists.txt          # project ECU_reader
-└── sdkconfig               # committed configuration (esp32s3, NimBLE enabled)
+├── sdkconfig.defaults      # common config (NimBLE enabled) - tracked
+└── sdkconfig.defaults.*    # per-target GPIO defaults - tracked; `sdkconfig` itself is generated
 ```
 
 ---
@@ -210,10 +221,10 @@ This is an active work in progress. Current rough edges:
 - **`status_led.c` is empty and `ws2812_init()` is never called**, so the WS2812 is not yet wired into
   the application state.
 - **No pairing or bonding is enforced** — the characteristic is open to any connected central.
-- The CI workflow copies a `sdkconfig.defaults` that is not in the repository; the committed
-  `sdkconfig` is used instead.
 - Only 11-bit addressing at 500 kbit/s is supported. No 29-bit / 250 kbit/s fallback, no automatic
   protocol detection.
+- **`esp32` and `esp32c3` only get a CI build**, not hardware validation — GPIO defaults for those
+  targets are unverified guesses at each dev board's onboard LED pin.
 
 ---
 

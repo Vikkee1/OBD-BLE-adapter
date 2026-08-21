@@ -1,0 +1,5 @@
+# Plain ESP32 (e.g. ESP32-DevKitC) has no onboard WS2812 - this GPIO is
+# an unused-by-default placeholder (ws2812_init() is not yet called, see
+# README "Status and known limitations"). Override to match your board.
+# Untested target - adjust CAN/LED GPIOs to match your actual board wiring.
+CONFIG_OBD_LED_GPIO=2

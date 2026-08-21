@@ -29,10 +29,11 @@
 /* Misc */
 #include "ws2812.h"
 
-/* I/O configuration */
-#define IO_TX       5
-#define IO_RX       4
-#define WS2812_GPIO 48
+/* I/O configuration - board/target specific, see Kconfig.projbuild
+ * and sdkconfig.defaults.<target> */
+#define IO_TX       CONFIG_OBD_CAN_TX_GPIO
+#define IO_RX       CONFIG_OBD_CAN_RX_GPIO
+#define WS2812_GPIO CONFIG_OBD_LED_GPIO
 
 #define APP_TAG "APP"
 #define USB_TASK_PERIOD (50 / portTICK_PERIOD_MS)

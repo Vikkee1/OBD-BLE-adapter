@@ -11,19 +11,24 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32s3, esp32, esp32c3]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-    
+
       - name: Get ESP-IDF & build project
         uses: espressif/esp-idf-ci-action@v1
-        with: 
+        with:
           esp_idf_version: v5.5.1
-          target: esp32s3
+          target: ${{ matrix.target }}
           command: |
-            cp sdkconfig.defaults sdkconfig || true
             set -e
             echo "::group::Configure"
+            idf.py set-target ${{ matrix.target }}
             idf.py reconfigure
             echo "::endgroup::"
 
