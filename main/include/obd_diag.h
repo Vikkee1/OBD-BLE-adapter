@@ -97,7 +97,25 @@ typedef enum {
     REQ_WAIT_CF       /* ISO-TP multiframe in progress, N_Cr timer armed */
 } obd_req_state_t;
 
+/* ============================================================
+ * Dependency seams -- injected so the FSM/protocol logic can be
+ * driven (and unit tested) without real CAN hardware, a real BLE
+ * stack, or a real clock. Production wiring lives in obd_diag.c;
+ * tests supply fakes instead.
+ * ============================================================ */
+typedef esp_err_t (*obd_can_send_fn)(uint32_t id, const uint8_t payload[8], uint8_t len);
+typedef bool      (*obd_ble_post_fn)(const app_msg_t *msg);
+typedef uint32_t  (*obd_now_ms_fn)(void);
+
 typedef struct {
+    obd_can_send_fn can_send; /* transmit a CAN frame                 */
+    obd_ble_post_fn ble_post; /* hand a decoded/reassembled frame off */
+    obd_now_ms_fn   now_ms;   /* monotonic milliseconds               */
+} obd_deps_t;
+
+typedef struct {
+    obd_deps_t deps;
+
     /* scheduling */
     enum Mode mode;
     size_t    pid_index;
@@ -147,4 +165,5 @@ typedef struct {
 esp_err_t obd_request_task_init(void);
 bool      obd_evt_post(const obd_evt_t *e);
 bool      obd_evt_post_from_isr(const obd_evt_t *e, BaseType_t *hpw);
+void      obd_ctx_init(obd_ctx_t *c, const obd_deps_t *deps);
 void      obd_request_task(void *arg);

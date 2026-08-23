@@ -1,4 +1,5 @@
 #include "obd_diag.h"
+#include <assert.h>
 #include <string.h>
 
 typedef struct {
@@ -37,23 +38,23 @@ static const uint8_t supp_blocks[SUPP_BLOCK_COUNT] = {
  * Time helpers. All arithmetic on uint32_t differences cast to
  * int32_t so the 49-day millisecond rollover is a non-event.
  * ============================================================ */
-static inline uint32_t now_ms(void)
+static uint32_t prod_now_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
-static inline bool reached(uint32_t deadline)
+static inline bool reached(uint32_t now, uint32_t deadline)
 {
-    return (int32_t)(now_ms() - deadline) >= 0;
+    return (int32_t)(now - deadline) >= 0;
 }
 
-static inline uint32_t ms_until(uint32_t deadline)
+static inline uint32_t ms_until(uint32_t now, uint32_t deadline)
 {
-    int32_t d = (int32_t)(deadline - now_ms());
+    int32_t d = (int32_t)(deadline - now);
     return (d <= 0) ? 0u : (uint32_t)d;
 }
 
-static void send_flow_control(uint32_t resp_id)
+static void send_flow_control(obd_ctx_t *c, uint32_t resp_id)
 {
     uint8_t p[8];
     memset(p, OBD_PAD_BYTE, sizeof(p));
@@ -62,7 +63,7 @@ static void send_flow_control(uint32_t resp_id)
     p[2] = OBD_FC_STMIN;
 
     /* Addressed to the ECU that answered, never to 0x7DF. */
-    if (can_send(OBD_REQ_ID_FUNC, p, 8) != ESP_OK) {
+    if (c->deps.can_send(OBD_REQ_ID_FUNC, p, 8) != ESP_OK) {
         ESP_LOGW(OBD_TAG, "FC drop, tx_queue full");
     }
 }
@@ -84,7 +85,7 @@ static esp_err_t obd_start_request(obd_ctx_t *c, uint8_t service,
         p[2] = pid;
     }
 
-    if (can_send(OBD_REQ_ID_FUNC, p, 8) != ESP_OK) {
+    if (c->deps.can_send(OBD_REQ_ID_FUNC, p, 8) != ESP_OK) {
         ESP_LOGE(OBD_TAG, "TX failed, retry next tick");
         return ESP_FAIL;          /* stay REQ_IDLE, poll gap still applies */
     }
@@ -93,7 +94,7 @@ static esp_err_t obd_start_request(obd_ctx_t *c, uint8_t service,
     c->pending_pid     = pid;
     c->pending_has_pid = has_pid;
     c->state           = REQ_WAIT_RESP;
-    c->last_tx_ms      = now_ms();
+    c->last_tx_ms      = c->deps.now_ms();
     c->deadline_ms     = c->last_tx_ms + OBD_P2_TIMEOUT_MS;
 
     ESP_LOGI(OBD_TAG, "REQ svc=%02X pid=%02X", service, pid);
@@ -116,7 +117,7 @@ static int pick_due_pid(uint32_t now, uint32_t next_due[]){
 }
 
 static void init_due_table(obd_ctx_t *c){
-    uint32_t now = now_ms();
+    uint32_t now = c->deps.now_ms();
     for (int i=0; i < PID_COUNT; i++){
         c->next_due[i] = now + i * 10;
     }
@@ -125,7 +126,7 @@ static void init_due_table(obd_ctx_t *c){
 }
 
 static void rearm_active(obd_ctx_t *c) {
-    c->next_due[c->pid_index] = now_ms() + pid_table[c->pid_index].period_ms;
+    c->next_due[c->pid_index] = c->deps.now_ms() + pid_table[c->pid_index].period_ms;
 }
 
 /* ============================================================
@@ -181,7 +182,7 @@ static void obd_complete(obd_ctx_t *c, bool ok)
 /* ============================================================
  * Deliver a completed service response upstream
  * ============================================================ */
-static void obd_deliver(uint32_t id, const uint8_t *data, uint16_t len)
+static void obd_deliver(obd_ctx_t *c, uint32_t id, const uint8_t *data, uint16_t len)
 {
     /* bus_msg_t.frame carries 8 bytes. Anything longer is chunked;
      * see the notes on extending the bus message for VIN/DTC. */
@@ -194,7 +195,7 @@ static void obd_deliver(uint32_t id, const uint8_t *data, uint16_t len)
         m.frame.dlc = n;
         memcpy(m.frame.data, &data[off], n);
 
-        if (!ble_mailbox_post(&m)) {
+        if (!c->deps.ble_post(&m)) {
             ESP_LOGW(OBD_TAG, "BLE queue full");
         }
         off += n;
@@ -235,7 +236,7 @@ static void handle_service_payload(obd_ctx_t *c, uint32_t id,
         if (d[2] == 0x78) {
             /* responsePending: the ECU is asking for more time.
              * Extend the window, do NOT resend, do NOT advance. */
-            c->deadline_ms = now_ms() + OBD_P2_STAR_TIMEOUT_MS;
+            c->deadline_ms = c->deps.now_ms() + OBD_P2_STAR_TIMEOUT_MS;
             ESP_LOGD(OBD_TAG, "NRC 0x78, extending to P2*");
             return;
         }
@@ -250,7 +251,7 @@ static void handle_service_payload(obd_ctx_t *c, uint32_t id,
         return;                                   /* not our pair, ignore */
     }
 
-    obd_deliver(id, d, len);
+    obd_deliver(c, id, d, len);
     obd_complete(c, true);                        /* <-- releases next TX */
 }
 
@@ -295,10 +296,10 @@ static void obd_handle_frame(obd_ctx_t *c, const can_frame_t *f)
         c->asm_next_sn = 1;
         memcpy(c->asm_buf, &f->data[2], 6);
 
-        send_flow_control(f->id);
+        send_flow_control(c, f->id);
 
         c->state       = REQ_WAIT_CF;
-        c->deadline_ms = now_ms() + OBD_N_CR_TIMEOUT_MS;
+        c->deadline_ms = c->deps.now_ms() + OBD_N_CR_TIMEOUT_MS;
         break;
     }
 
@@ -323,10 +324,10 @@ static void obd_handle_frame(obd_ctx_t *c, const can_frame_t *f)
         c->asm_got = (uint16_t)(c->asm_got + n);
 
         if (c->asm_got >= c->asm_len) {
-            obd_deliver(c->asm_id, c->asm_buf, c->asm_len);
+            obd_deliver(c, c->asm_id, c->asm_buf, c->asm_len);
             obd_complete(c, true);                /* <-- releases next TX */
         } else {
-            c->deadline_ms = now_ms() + OBD_N_CR_TIMEOUT_MS;
+            c->deadline_ms = c->deps.now_ms() + OBD_N_CR_TIMEOUT_MS;
         }
         break;
     }
@@ -341,7 +342,7 @@ static void obd_handle_frame(obd_ctx_t *c, const can_frame_t *f)
  * ============================================================ */
 static void obd_check_timeout(obd_ctx_t *c)
 {
-    if (c->state == REQ_IDLE || !reached(c->deadline_ms)) {
+    if (c->state == REQ_IDLE || !reached(c->deps.now_ms(), c->deadline_ms)) {
         return;
     }
 
@@ -375,16 +376,18 @@ static void obd_check_timeout(obd_ctx_t *c)
 static void obd_schedule(obd_ctx_t *c)
 {
     int i = -1;
+    uint32_t now = c->deps.now_ms();
+
     if (c->state != REQ_IDLE) {
         return;                                        /* gate 1 */
     }
-    if (!reached(c->last_tx_ms + c->poll_gap_ms)) {
+    if (!reached(now, c->last_tx_ms + c->poll_gap_ms)) {
         return;                                        /* gate 2 */
     }
 
     switch (c->mode) {
     case STREAM:
-        i = (c->retries > 0) ? c->pid_index : pick_due_pid(now_ms(), c->next_due);
+        i = (c->retries > 0) ? c->pid_index : pick_due_pid(now, c->next_due);
         if (i<0) break;
         c->pid_index = i;
         obd_start_request(c, 0x01, pid_table[i].pid, true);
@@ -440,16 +443,17 @@ static void obd_handle_cmd(obd_ctx_t *c, uint8_t cmd, uint8_t pid)
 static uint32_t next_wakeup_ms(const obd_ctx_t *c)
 {
     uint32_t w;
+    uint32_t now = c->deps.now_ms();
 
     if (c->mode == IDLE) {
         w = OBD_TASK_MAX_SLEEP_MS;
     } else if (c->state != REQ_IDLE) {
-        w = ms_until(c->deadline_ms);                 /* P2 / N_Cr */
+        w = ms_until(now, c->deadline_ms);                 /* P2 / N_Cr */
     } else {
-        w = ms_until(c->last_tx_ms + c->poll_gap_ms); /* poll gap  */
+        w = ms_until(now, c->last_tx_ms + c->poll_gap_ms); /* poll gap  */
         if (c->mode == STREAM) {
             for (int i = 0; i < PID_COUNT; i++) {
-                uint32_t d = ms_until(c->next_due[i]);
+                uint32_t d = ms_until(now, c->next_due[i]);
                 if (d < w) w = d;
             }
         }
@@ -459,16 +463,36 @@ static uint32_t next_wakeup_ms(const obd_ctx_t *c)
 }
 
 /* ============================================================
+ * Context lifecycle. `deps` is the only door into the outside
+ * world (CAN, BLE, clock); everything above this line only ever
+ * touches it through c->deps, so a test can swap in fakes here
+ * without linking the real CAN/BLE/RTOS stack.
+ * ============================================================ */
+void obd_ctx_init(obd_ctx_t *c, const obd_deps_t *deps)
+{
+    assert(deps && deps->can_send && deps->ble_post && deps->now_ms);
+
+    memset(c, 0, sizeof(*c));
+    c->deps         = *deps;
+    c->mode         = IDLE;
+    c->state        = REQ_IDLE;
+    c->poll_gap_ms  = OBD_MIN_POLL_GAP_MS;
+}
+
+static const obd_deps_t obd_prod_deps = {
+    .can_send = can_send,
+    .ble_post = ble_mailbox_post,
+    .now_ms   = prod_now_ms,
+};
+
+/* ============================================================
  * OBD Task
  * ============================================================ */
 void obd_request_task(void *arg)
 {
     static obd_ctx_t ctx;
 
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.mode        = IDLE;
-    ctx.state       = REQ_IDLE;
-    ctx.poll_gap_ms = OBD_MIN_POLL_GAP_MS;
+    obd_ctx_init(&ctx, &obd_prod_deps);
 
     ESP_LOGI(OBD_TAG, "OBD task started");
 
